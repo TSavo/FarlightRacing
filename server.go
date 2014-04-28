@@ -1,76 +1,20 @@
+// +build ignore
+
 package main
 
 import (
-	"fmt"
-	"github.com/TSavo/chipmunk"
+	"encoding/json"
+	. "github.com/TSavo/GreatSpaceRace"
 	"github.com/TSavo/chipmunk/vect"
-	"math"
-	"math/rand"
 	"net"
-	"time"
+	//"fmt"
+	"bufio"
 )
 
-type Ship struct {
-	Id    int
-	Shape *chipmunk.Shape
-}
-
-var (
-	ballRadius = 25
-	ballMass   = 1
-	space       *chipmunk.Space
-	balls       []*Ship
-	staticLines []*chipmunk.Shape
-	deg2rad     = math.Pi / 180
-)
-
-func addBall() {
-	x := rand.Intn(1135) + 115
-	//ball := chipmunk.NewCircle(vect.Vector_Zero, vect.Float(ballRadius))
-	ball := chipmunk.NewBox(vect.Vector_Zero, 50,50)
-	ball.SetElasticity(0.9)
-	body := chipmunk.NewBody(vect.Float(10000000), ball.Moment(vect.Float(100000000)))
-	body.SetPosition(vect.Vect{vect.Float(x), 100.0})
-	body.SetAngle(vect.Float(rand.Float64() * 2 * math.Pi))
-//	t := 2
-//	if(rand.Intn(2) == 1){
-//		t *= -1
-//	}
-//	body.AddTorque(vect.Float(t))
-	body.AddShape(ball)
-	space.AddBody(body)
-	balls = append(balls, &Ship{x, ball})
-}
-
-// step advances the physics engine and cleans up any balls that are off-screen
-func step(dt float32) {
-	space.Step(vect.Float(dt))
-	for i := 0; i < len(balls); i++ {
-		p := balls[i].Shape.Body.Position()
-		if p.Y > 1500 {
-			space.RemoveBody(balls[i].Shape.Body)
-			balls = append(balls[:i], balls[i+1:]...)
-			i-- // consider same index again
-		}
-	}
-
-}
-
-// createBodies sets up the chipmunk space and static bodies
-func createBodies() {
-	space = chipmunk.NewSpace()
-	space.Gravity = vect.Vect{0, 2900}
-
-	staticBody := chipmunk.NewBodyStatic()
-	staticLines = []*chipmunk.Shape{
-		chipmunk.NewSegment(vect.Vect{100.0, 500.0}, vect.Vect{1000.0, 500.0}, 0),
-		chipmunk.NewSegment(vect.Vect{1000.0, 500.0}, vect.Vect{1000.0, 100.0}, 0),
-	}
-	for _, segment := range staticLines {
-		segment.SetElasticity(0.9)
-		staticBody.AddShape(segment)
-	}
-	space.AddBody(staticBody)
+type PlayerPosition struct {
+	Name                 string
+	Dimensions, Position vect.Vect
+	Angle                vect.Float
 }
 
 func main() {
@@ -82,23 +26,51 @@ func main() {
 		if err != nil {
 			continue
 		}
-		createBodies()
-		ticksToNextBall := 10
-		ticker := time.NewTicker(time.Second / 60)
+		walls := []Wall{
+			Wall{vect.Vect{0, 0}, vect.Vect{0, 1000}},
+			Wall{vect.Vect{0, 1000}, vect.Vect{1000, 1000}},
+			Wall{vect.Vect{1000, 1000}, vect.Vect{1000, 0}},
+			Wall{vect.Vect{1000, 0}, vect.Vect{0, 0}},
+
+			Wall{vect.Vect{250, 250}, vect.Vect{250, 750}},
+			Wall{vect.Vect{250, 750}, vect.Vect{750, 750}},
+			Wall{vect.Vect{750, 750}, vect.Vect{750, 250}},
+			Wall{vect.Vect{750, 250}, vect.Vect{250, 250}},
+		}
+
+		goalWall := Wall{vect.Vect{500, 0}, vect.Vect{500, 250}}
+
+		goal := GoalLine{goalWall, 0, 1, 0}
+
+		track := &Track{"testtrack", "Test Track", walls, goal}
+		player := Player{Name: "Test Player", Conn: conn}
+		race := NewRace(track)
+		prototype := Prototype{"Test Ship", 100, 50, 1000000, 1000000000, 1000, 1000}
+		race.RegisterRacer(&player, &prototype)
+		encoder := json.NewEncoder(conn)
+		//decoder := json.Decoder(conn)
+		race.StartRace()
 		for {
-			ticksToNextBall--
-			if ticksToNextBall == 0 {
-				ticksToNextBall = rand.Intn(20) + 1
-				addBall()
+			message := make(map[string]interface{})
+			message["track"] = track
+			players := make([]PlayerPosition, len(race.Ships))
+			for x, ship := range race.Ships {
+				reader := bufio.NewReader(conn)
+				message, _, _ := reader.ReadLine()
+				//fmt.Println(string(message))
+				decoded := new(map[string]float64)
+				json.Unmarshal(message, &decoded)
+				//
+				//fmt.Println(*decoded)
+				players[x] = PlayerPosition{ship.Player.Name, vect.Vect{ship.Prototype.Width, ship.Prototype.Height}, ship.Body.Position(), ship.Body.Angle()}
+				ship.Controller.Thrust = vect.Float((*decoded)["Thrust"])
+				ship.Controller.Turning = vect.Float((*decoded)["Rotation"])
+				ship.ApplyThrust(ship.Controller.Thrust)
+				ship.ApplyRotation(ship.Controller.Turning)
 			}
-			step(1.0 / 60.0)
-			fmt.Fprintf(conn, "refresh\n")
-			for _, x := range balls {
-				if x.Shape.Body != nil {
-					fmt.Fprintf(conn, "%d,%f,%f,%f\n", x.Id, x.Shape.Body.Position().X, x.Shape.Body.Position().Y, x.Shape.Body.Angle())
-				}
-			}
-			<-ticker.C // wait up to 1/60th of a second
+			message["players"] = players
+			encoder.Encode(message)
+			race.StepRace(1.0 / 60.0)
 		}
 	}
 	// set up physics
