@@ -1,20 +1,21 @@
 package greatspacerace
 
 import (
+	"fmt"
 	"github.com/TSavo/chipmunk"
 	"github.com/TSavo/chipmunk/vect"
 	"math"
-	"fmt"
 )
 
 type Race struct {
-	Track *Track
-	Ships []*Ship
-	Space *chipmunk.Space
+	Track   *Track
+	Ships   []*Ship
+	Space   *chipmunk.Space
+	Started bool
 }
 
 func NewRace(track *Track) *Race {
-	race := &Race{track, make([]*Ship, 0), chipmunk.NewSpace()}
+	race := &Race{track, make([]*Ship, 0), chipmunk.NewSpace(), false}
 	staticBody := chipmunk.NewBodyStatic()
 	for _, wall := range track.Walls {
 		segment := chipmunk.NewSegment(wall.Point1, wall.Point2, 0)
@@ -24,7 +25,8 @@ func NewRace(track *Track) *Race {
 	return race
 }
 
-func (this *Race) StartRace(){
+func (this *Race) StartRace() {
+	this.Started = true
 	startPoints := this.Track.GoalLine.GetStartingPositions(len(this.Ships))
 	for x, ship := range this.Ships {
 		ship.Body.SetPosition(startPoints[x])
