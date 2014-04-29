@@ -1,35 +1,38 @@
-// +build ignore
-
-package main
+package greatspacerace
 
 import (
 	"encoding/json"
-	. "github.com/TSavo/GreatSpaceRace"
 	"github.com/TSavo/chipmunk/vect"
 	"net"
 	//"fmt"
 	"bufio"
+	"strconv"
+	"sync"
 )
 
-type PlayerPosition struct {
-	Name                 string
-	Dimensions, Position vect.Vect
-	Angle                vect.Float
+
+type RaceLobby struct {
+	*Race
+	NumPlayers int
+	Password   string
 }
 
 type Server struct {
-	Races []*Race
+	Races   []*Race
+	Lobbies []*RaceLobby
+	Lock    *sync.Mutex
 }
 
-func main() {
-	ln, err := net.Listen("tcp", ":8080")
-	if err != nil {
-	}
-	conn, err := ln.Accept()
-	if err != nil {
-		return
-	}
+type JoinMessage struct {
+	Name, Track, Prototype, Password string
+	NumPlayers                       int
+}
 
+func GetPrototype(name string) *Prototype {
+	return &Prototype{"Test Ship", 100, 50, 200000, 3500000, 1000, 1000}
+}
+
+func GetTrack(name string) *Track {
 	walls := []Wall{
 		Wall{vect.Vect{0, 0}, vect.Vect{0, 900}},
 		Wall{vect.Vect{0, 900}, vect.Vect{1500, 900}},
@@ -46,32 +49,60 @@ func main() {
 
 	goal := GoalLine{goalWall, 0, 1, 0}
 
-	track := &Track{"testtrack", "Test Track", walls, goal}
-	player := Player{Name: "Test Player", Conn: conn}
-	race := NewRace(track)
-	prototype := Prototype{"Test Ship", 100, 50, 200000, 3500000, 1000, 1000}
-	race.RegisterRacer(&player, &prototype)
-	race.StartRace()
+	return &Track{"testtrack", "Test Track", walls, goal}
+}
+
+func (this *Server) HandleConnection(conn net.Conn) {
+	reader := bufio.NewReader(conn)
+	message, _, _ := reader.ReadLine()
+	joinMessage := JoinMessage{}
+	json.Unmarshal(message, &joinMessage)
+
+	player := Player{Name: joinMessage.Name, Conn: conn}
+	this.Lock.Lock()
+	removeRace := -1
+	foundRace := false
+	for x, race := range this.Lobbies {
+		if race.Race.Track.Id == joinMessage.Track && race.NumPlayers == joinMessage.NumPlayers && race.Password == joinMessage.Password {
+			race.Race.RegisterRacer(&player, GetPrototype(joinMessage.Prototype))
+			foundRace = true
+			if race.NumPlayers == len(race.Race.Ships) {
+				this.Races = append(this.Races, race.Race)
+				go race.Race.RunRace()
+				removeRace = x
+			}
+			break
+		}
+	}
+	if removeRace > -1 {
+		this.Lobbies = append(this.Lobbies[:removeRace], this.Lobbies[removeRace+1:]...)
+	}
+	if foundRace {
+		this.Lock.Unlock()
+		return
+	}
+	track := GetTrack(joinMessage.Track)
+	lobby := RaceLobby{NewRace(track), joinMessage.NumPlayers, joinMessage.Password}
+	lobby.Race.RegisterRacer(&player, GetPrototype(joinMessage.Prototype))
+	this.Lobbies = append(this.Lobbies, &lobby)
+	this.Lock.Unlock()
+	trackMessage := make(map[string]interface{})
+	trackMessage["Track"] = track
+	trackMessage["Race"] = lobby.Race.Id
+	writer := json.NewEncoder(conn)
+	writer.Encode(message)
+}
+
+func (this *Server) Listen(port int) {
+	ln, err := net.Listen("tcp", ":"+strconv.Itoa(port))
+	if err != nil {
+		return
+	}
 	for {
-		message := make(map[string]interface{})
-		message["track"] = track
-		players := make([]PlayerPosition, len(race.Ships))
-		for x, ship := range race.Ships {
-			players[x] = PlayerPosition{ship.Player.Name, vect.Vect{ship.Prototype.Width, ship.Prototype.Height}, ship.Body.Position(), ship.Body.Angle()}
+		conn, err := ln.Accept()
+		if err != nil {
+			continue
 		}
-		message["players"] = players
-		for _, ship := range race.Ships {
-			reader := bufio.NewReader(conn)
-			writer := json.NewEncoder(conn)
-			writer.Encode(message)
-			message, _, _ := reader.ReadLine()
-			decoded := new(map[string]float64)
-			json.Unmarshal(message, &decoded)
-			ship.Controller.Thrust = vect.Float((*decoded)["Thrust"])
-			ship.Controller.Turning = vect.Float((*decoded)["Rotation"])
-			ship.ApplyThrust(ship.Controller.Thrust)
-			ship.ApplyRotation(ship.Controller.Turning)
-		}
-		race.StepRace(1.0 / 60.0)
+		go this.HandleConnection(conn)
 	}
 }

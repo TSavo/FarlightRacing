@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"github.com/TSavo/chipmunk"
 	"github.com/TSavo/chipmunk/vect"
+	"github.com/twinj/uuid"
 	"math"
+	"bufio"
+	"encoding/json"
 )
 
 type Race struct {
+	Id      string
 	Track   *Track
 	Ships   []*Ship
 	Space   *chipmunk.Space
@@ -15,7 +19,7 @@ type Race struct {
 }
 
 func NewRace(track *Track) *Race {
-	race := &Race{track, make([]*Ship, 0), chipmunk.NewSpace(), false}
+	race := &Race{uuid.NewV4().String(), track, make([]*Ship, 0), chipmunk.NewSpace(), false}
 	staticBody := chipmunk.NewBodyStatic()
 	for _, wall := range track.Walls {
 		segment := chipmunk.NewSegment(wall.Point1, wall.Point2, 0)
@@ -23,6 +27,36 @@ func NewRace(track *Track) *Race {
 	}
 	race.Space.AddBody(staticBody)
 	return race
+}
+
+type PlayerPosition struct {
+	Name                 string
+	Dimensions, Position vect.Vect
+	Angle                vect.Float
+}
+
+func (this *Race) RunRace() {
+	this.StartRace()
+	for {
+		players := make([]PlayerPosition, len(this.Ships))
+		for x, ship := range this.Ships {
+			players[x] = PlayerPosition{ship.Player.Name, vect.Vect{ship.Prototype.Width, ship.Prototype.Height}, ship.Body.Position(), ship.Body.Angle()}
+		}
+		for _, ship := range this.Ships {
+			ship.Player.Send("RaceUpdate", players)
+		}
+		for _, ship := range this.Ships {
+			reader := bufio.NewReader(ship.Player.Conn)
+			message, _, _ := reader.ReadLine()
+			decoded := new(map[string]float64)
+			json.Unmarshal(message, &decoded)
+			ship.Controller.Thrust = vect.Float((*decoded)["Thrust"])
+			ship.Controller.Turning = vect.Float((*decoded)["Rotation"])
+			ship.ApplyThrust(ship.Controller.Thrust)
+			ship.ApplyRotation(ship.Controller.Turning)
+		}
+		this.StepRace(1.0 / 60.0)
+	}
 }
 
 func (this *Race) StartRace() {

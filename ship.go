@@ -23,15 +23,15 @@ type Controller struct {
 }
 
 func NewShip(player *Player, prototype *Prototype, body *chipmunk.Body) *Ship {
-	return &Ship{player, prototype, body, &Controller{0,0}}
+	return &Ship{player, prototype, body, &Controller{0, 0}}
 }
 
 func (this *Ship) ApplyThrust(thrust vect.Float) {
 	thrustVector := vect.FromAngle(this.Body.Angle())
 	thrustVector.Normalize()
-	thrustVector.Mult(this.Prototype.Thrust * thrust);
-	this.Body.AddForce(thrustVector.X, thrustVector.Y);
+	thrustVector.Mult(this.Prototype.Thrust * thrust)
+	this.Body.AddForce(thrustVector.X, thrustVector.Y)
 }
 func (this *Ship) ApplyRotation(thrust vect.Float) {
-	this.Body.SetTorque(this.Prototype.Turning * thrust);
+	this.Body.SetTorque(this.Prototype.Turning * thrust)
 }
