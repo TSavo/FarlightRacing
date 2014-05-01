@@ -1,13 +1,13 @@
 package greatspacerace
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"github.com/TSavo/chipmunk"
 	"github.com/TSavo/chipmunk/vect"
 	"github.com/twinj/uuid"
 	"math"
-	"bufio"
-	"encoding/json"
 )
 
 type Race struct {

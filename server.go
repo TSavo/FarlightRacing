@@ -18,7 +18,11 @@ type RaceLobby struct {
 type Server struct {
 	Races        []*Race
 	Lobbies      []*RaceLobby
-	RegisterChan chan *JoinMessage
+	RegisterChan chan *net.Conn
+}
+
+func NewServer() *Server {
+	return &Server{make([]*Race, 0), make([]*RaceLobby, 0), make(chan *net.Conn, 100)}
 }
 
 type JoinMessage struct {
@@ -53,7 +57,12 @@ func GetTrack(name string) *Track {
 
 func (this *Server) RegisterThread() {
 	for {
-		joinMessage := <-this.RegisterChan
+		conn := <-this.RegisterChan
+		reader := bufio.NewReader(*conn)
+		message, _, _ := reader.ReadLine()
+		joinMessage := JoinMessage{}
+		json.Unmarshal(message, &joinMessage)
+		joinMessage.Conn = *conn
 		player := Player{Name: joinMessage.Name, Conn: joinMessage.Conn}
 		var lobby *RaceLobby = nil
 		for _, race := range this.Lobbies {
@@ -62,7 +71,7 @@ func (this *Server) RegisterThread() {
 				break
 			}
 		}
-		if(lobby == nil) {
+		if lobby == nil {
 			lobby = &RaceLobby{NewRace(GetTrack(joinMessage.Track)), joinMessage.NumPlayers, joinMessage.Password}
 			this.Lobbies = append(this.Lobbies, lobby)
 		}
@@ -71,11 +80,11 @@ func (this *Server) RegisterThread() {
 		trackMessage["Track"] = lobby.Race.Track
 		trackMessage["Race"] = lobby.Race.Id
 		player.Send("RaceData", trackMessage)
-		this.StartRaces();
+		this.StartRaces()
 	}
 }
 
-func (this *Server) StartRaces(){
+func (this *Server) StartRaces() {
 	for x := 0; x < len(this.Lobbies); x++ {
 		race := this.Lobbies[x]
 		if race.NumPlayers == len(race.Race.Ships) {
@@ -85,15 +94,6 @@ func (this *Server) StartRaces(){
 			go race.Race.RunRace()
 		}
 	}
-}
-
-func (this *Server) HandleConnection(conn net.Conn) {
-	reader := bufio.NewReader(conn)
-	message, _, _ := reader.ReadLine()
-	joinMessage := JoinMessage{}
-	json.Unmarshal(message, &joinMessage)
-	joinMessage.Conn = conn
-	this.RegisterChan <- &joinMessage
 }
 
 func (this *Server) Listen(port int) {
@@ -107,6 +107,6 @@ func (this *Server) Listen(port int) {
 		if err != nil {
 			continue
 		}
-		go this.HandleConnection(conn)
+		this.RegisterChan <- &conn
 	}
 }
