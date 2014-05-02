@@ -50,9 +50,15 @@ func GetTrack(name string) *Track {
 
 	goalWall := Wall{vect.Vect{500, 0}, vect.Vect{500, 250}}
 
-	goal := GoalLine{goalWall, 0, 1, 0}
+	goal := Checkpoint{goalWall, 0, 1, 0}
 
-	return &Track{"testtrack", "Test Track", walls, goal}
+	checkpoints := []Checkpoint{
+	Checkpoint{Wall{vect.Vect{750, 450}, vect.Vect{1500, 450}}, 0, 0, 1},
+	Checkpoint{Wall{vect.Vect{500, 750}, vect.Vect{500, 900}}, 0, -1, 0},
+	Checkpoint{Wall{vect.Vect{0, 450}, vect.Vect{250, 450}}, 0, 0, -1},
+	}
+
+	return &Track{"testtrack", "Test Track", walls, goal, checkpoints}
 }
 
 func (this *Server) RegisterThread() {

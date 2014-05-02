@@ -6,18 +6,19 @@ type Wall struct {
 	Point1, Point2 vect.Vect
 }
 
-type GoalLine struct {
+type Checkpoint struct {
 	Wall                        Wall
 	Angle, XCrossing, YCrossing vect.Float
 }
 
 type Track struct {
-	Id, Name string
-	Walls    []Wall
-	GoalLine GoalLine
+	Id, Name    string
+	Walls       []Wall
+	GoalLine    Checkpoint
+	Checkpoints []Checkpoint
 }
 
-func (this *GoalLine) GetStartingPositions(pieces int) []vect.Vect {
+func (this *Checkpoint) GetStartingPositions(pieces int) []vect.Vect {
 	xDif := (this.Wall.Point2.X - this.Wall.Point1.X) / vect.Float(pieces+1)
 	yDif := (this.Wall.Point2.Y - this.Wall.Point1.Y) / vect.Float(pieces+1)
 	places := make([]vect.Vect, pieces)

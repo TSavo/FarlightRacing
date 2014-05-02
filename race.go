@@ -55,8 +55,20 @@ func (this *Race) RunRace() {
 			ship.ApplyThrust(ship.Controller.Thrust)
 			ship.ApplyRotation(ship.Controller.Turning)
 		}
-		this.StepRace(1.0 / 60.0)
+		this.MoveShips()
 	}
+}
+
+func (this *Race) MoveShips() {
+	old := make(map[string]vect.Vect)
+	for _, ship := range this.Ships {
+		old[ship.Player.Name] = ship.Body.Position()
+	}
+	this.StepRace(1.0 / 60.0)
+//	for _, ship := range this.Ships {
+//		//before := old[ship.Player.Name]
+//	}
+
 }
 
 func (this *Race) StartRace() {
