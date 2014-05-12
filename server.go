@@ -36,29 +36,28 @@ func GetPrototype(name string) *Prototype {
 }
 
 func GetTrack(name string) *Track {
-	walls := []Wall{
-		Wall{vect.Vect{0, 0}, vect.Vect{0, 900}},
-		Wall{vect.Vect{0, 900}, vect.Vect{1500, 900}},
-		Wall{vect.Vect{1500, 900}, vect.Vect{1500, 0}},
-		Wall{vect.Vect{1500, 0}, vect.Vect{0, 0}},
+	Segments := []Segment{
+		Segment{vect.Vect{0, 0}, vect.Vect{0, 900}},
+		Segment{vect.Vect{0, 900}, vect.Vect{1500, 900}},
+		Segment{vect.Vect{1500, 900}, vect.Vect{1500, 0}},
+		Segment{vect.Vect{1500, 0}, vect.Vect{0, 0}},
 
-		Wall{vect.Vect{250, 250}, vect.Vect{250, 750}},
-		Wall{vect.Vect{250, 750}, vect.Vect{750, 750}},
-		Wall{vect.Vect{750, 750}, vect.Vect{750, 250}},
-		Wall{vect.Vect{750, 250}, vect.Vect{250, 250}},
+		Segment{vect.Vect{250, 250}, vect.Vect{250, 750}},
+		Segment{vect.Vect{250, 750}, vect.Vect{750, 750}},
+		Segment{vect.Vect{750, 750}, vect.Vect{750, 250}},
+		Segment{vect.Vect{750, 250}, vect.Vect{250, 250}},
 	}
 
-	goalWall := Wall{vect.Vect{500, 0}, vect.Vect{500, 250}}
+	goalSegment := Segment{vect.Vect{500, 0}, vect.Vect{500, 250}}
 
-	goal := Checkpoint{goalWall, 0, 1, 0}
 
-	checkpoints := []Checkpoint{
-	Checkpoint{Wall{vect.Vect{750, 450}, vect.Vect{1500, 450}}, 0, 0, 1},
-	Checkpoint{Wall{vect.Vect{500, 750}, vect.Vect{500, 900}}, 0, -1, 0},
-	Checkpoint{Wall{vect.Vect{0, 450}, vect.Vect{250, 450}}, 0, 0, -1},
+	checkpoints := []Segment{
+		Segment{vect.Vect{750, 450}, vect.Vect{1500, 450}},
+		Segment{vect.Vect{500, 750}, vect.Vect{500, 900}},
+		Segment{vect.Vect{0, 450}, vect.Vect{250, 450}},
 	}
 
-	return &Track{"testtrack", "Test Track", walls, goal, checkpoints}
+	return &Track{name, name, 3, Segments, goalSegment, 0, checkpoints}
 }
 
 func (this *Server) RegisterThread() {
@@ -69,7 +68,8 @@ func (this *Server) RegisterThread() {
 		joinMessage := JoinMessage{}
 		json.Unmarshal(message, &joinMessage)
 		joinMessage.Conn = *conn
-		player := Player{Name: joinMessage.Name, Conn: joinMessage.Conn}
+		ship := NewShip(GetPrototype(joinMessage.Prototype))
+		player := NewPlayer(joinMessage.Name, &joinMessage.Conn, ship)
 		var lobby *RaceLobby = nil
 		for _, race := range this.Lobbies {
 			if race.Race.Track.Id == joinMessage.Track && race.NumPlayers == joinMessage.NumPlayers && race.Password == joinMessage.Password {
@@ -81,23 +81,23 @@ func (this *Server) RegisterThread() {
 			lobby = &RaceLobby{NewRace(GetTrack(joinMessage.Track)), joinMessage.NumPlayers, joinMessage.Password}
 			this.Lobbies = append(this.Lobbies, lobby)
 		}
-		lobby.Race.RegisterRacer(&player, GetPrototype(joinMessage.Prototype))
+		lobby.Race.RegisterRacer(player)
 		trackMessage := make(map[string]interface{})
 		trackMessage["Track"] = lobby.Race.Track
 		trackMessage["Race"] = lobby.Race.Id
-		player.Send("RaceData", trackMessage)
+		player.SendChan <- &Message{"RaceData", trackMessage, -1}
 		this.StartRaces()
 	}
 }
 
 func (this *Server) StartRaces() {
 	for x := 0; x < len(this.Lobbies); x++ {
-		race := this.Lobbies[x]
-		if race.NumPlayers == len(race.Race.Ships) {
-			this.Races = append(this.Races, race.Race)
+		lobby := this.Lobbies[x]
+		if lobby.NumPlayers == len(lobby.Race.Racers) {
+			this.Races = append(this.Races, lobby.Race)
 			this.Lobbies = append(this.Lobbies[:x], this.Lobbies[x+1:]...)
 			x--
-			go race.Race.RunRace()
+			go lobby.Race.RunRace()
 		}
 	}
 }

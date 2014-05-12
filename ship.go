@@ -7,7 +7,6 @@ import (
 )
 
 type Ship struct {
-	Player         *Player
 	Prototype      *Prototype
 	Body           *chipmunk.Body
 	Controller     *Controller
@@ -28,8 +27,8 @@ type Controller struct {
 	Thrust, Turning vect.Float
 }
 
-func NewShip(player *Player, prototype *Prototype, body *chipmunk.Body) *Ship {
-	return &Ship{player, prototype, body, &Controller{0, 0}, 0, make([]Lap, 0)}
+func NewShip(prototype *Prototype) *Ship {
+	return &Ship{prototype, nil, &Controller{0, 0}, 0, make([]Lap, 0)}
 }
 
 func (this *Ship) ApplyThrust(thrust vect.Float) {
