@@ -18,7 +18,7 @@ type Player struct {
 type Message struct {
 	Type string
 	Data interface{}
-	Tick int64
+	Tick int
 }
 
 func NewPlayer(name string, conn *net.Conn, ship *Ship) *Player {

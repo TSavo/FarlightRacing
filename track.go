@@ -6,6 +6,15 @@ type Segment struct {
 	Point1, Point2 vect.Vect
 }
 
+type Track struct {
+	Id, Name       string
+	Laps, MaxTicks int
+	Segments       []Segment
+	Goal           Segment
+	StartingAngle  vect.Float
+	Checkpoints    []Segment
+}
+
 func (S1 *Segment) Intersects(S2 *Segment) bool {
 	u := vect.Sub(S1.Point2, S1.Point1)
 	v := vect.Sub(S2.Point2, S2.Point1)
@@ -89,15 +98,6 @@ func (S *Segment) Contains(P vect.Vect) bool {
 		}
 	}
 	return false
-}
-
-type Track struct {
-	Id, Name      string
-	Laps          int
-	Segments      []Segment
-	Goal          Segment
-	StartingAngle vect.Float
-	Checkpoints   []Segment
 }
 
 func (this *Segment) GetStartingPositions(pieces int) []vect.Vect {

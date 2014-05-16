@@ -57,7 +57,7 @@ func GetTrack(name string) *Track {
 		Segment{vect.Vect{0, 450}, vect.Vect{250, 450}},
 	}
 
-	return &Track{name, name, 3, Segments, goalSegment, 0, checkpoints}
+	return &Track{name, name, 3, 25000, Segments, goalSegment, 0, checkpoints}
 }
 
 func (this *Server) RegisterThread() {

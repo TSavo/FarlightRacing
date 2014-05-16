@@ -1,16 +1,15 @@
 package greatspacerace
 
 import (
+	"fmt"
 	"github.com/TSavo/chipmunk"
 	"github.com/TSavo/chipmunk/vect"
-	"github.com/chourobin/go.firebase"
 	"github.com/nu7hatch/gouuid"
 	"math"
 	"runtime"
 	"time"
 )
 
-var db = firebase.New("https://greatspacerace.firebaseio.com/")
 
 type Race struct {
 	Id      string
@@ -18,7 +17,7 @@ type Race struct {
 	Racers  []*PlayerPosition
 	Space   *chipmunk.Space
 	Started bool
-	Ticks   int64
+	Ticks   int
 }
 
 func NewRace(track *Track) *Race {
@@ -36,7 +35,7 @@ func NewRace(track *Track) *Race {
 type Location struct {
 	Position vect.Vect
 	Angle    vect.Float
-	Tick     int64
+	Tick     int
 }
 
 type PlayerPosition struct {
@@ -44,7 +43,7 @@ type PlayerPosition struct {
 	Dimensions, Position vect.Vect
 	Angle                vect.Float
 	Checkpoint           int
-	LapTimes             []int64
+	LapTimes             []int
 	Finished             bool
 	player               *Player
 	messages             []*Message
@@ -55,6 +54,10 @@ func (this *Race) RunRace() {
 	this.StartRace()
 outer:
 	for {
+		this.Ticks++
+		if this.Ticks > this.Track.MaxTicks {
+			break
+		}
 		raceUpdate := Message{"RaceUpdate", this.Racers, this.Ticks}
 		for _, racer := range this.Racers {
 			racer.player.SendChan <- &raceUpdate
@@ -94,7 +97,36 @@ outer:
 		for _ = range this.Racers {
 			<-finished
 		}
-		this.MoveShips()
+		this.Space.Step(1.0 / 60.0)
+		for _, racer := range this.Racers {
+			if racer.Finished {
+				continue
+			}
+			motion := Segment{racer.Position, racer.player.Ship.Body.Position()}
+			racer.Position = racer.player.Ship.Body.Position()
+			racer.Angle = racer.player.Ship.Body.Angle()
+			racer.locations = append(racer.locations, &Location{racer.Position, racer.Angle, this.Ticks})
+			if racer.Checkpoint == len(this.Track.Checkpoints) {
+				if motion.Intersects(&this.Track.Goal) {
+					racer.Checkpoint = 0
+					elapsed := 0
+					for _, x := range racer.LapTimes {
+						elapsed += x
+					}
+					racer.LapTimes = append(racer.LapTimes, this.Ticks-elapsed)
+					racer.player.SendChan <- &Message{"LapFinished", this.Ticks - elapsed, -1}
+					if len(racer.LapTimes) == this.Track.Laps {
+						this.Space.RemoveBody(racer.player.Ship.Body)
+						racer.Finished = true
+						racer.player.SendChan <- &Message{"YourRaceFinished", racer.LapTimes, -1}
+					}
+				}
+			} else {
+				if motion.Intersects(&this.Track.Checkpoints[racer.Checkpoint]) {
+					racer.Checkpoint++
+				}
+			}
+		}
 		for _, racer := range this.Racers {
 			if !racer.Finished {
 				continue outer
@@ -108,49 +140,22 @@ outer:
 	results["Date"] = time.Now().String()
 	results["Track"] = this.Track
 	for x, racer := range this.Racers {
+		racers[x] = make(map[string]interface{})
+		racers[x]["Name"] = racer.Name
 		racers[x]["LapTimes"] = racer.LapTimes
 		racers[x]["Messages"] = racer.messages
-		racers[x]["Name"] = racer.Name
 		racers[x]["Locations"] = racer.locations
-		racer.player.SendChan <- &Message{"RaceFinished", racer.LapTimes, -1}
+		racers[x]["Prototype"] = racer.player.Ship.Prototype
+		endMessage := make(map[string]interface{})
+		endMessage["LapTimes"] = racer.LapTimes
+		endMessage["ResultsUrl"] = "https://greatspacerace.firebaseio.com/" + this.Id
+		racer.player.SendChan <- &Message{"RaceFinished", endMessage, -1}
 	}
 	results["Racers"] = racers
-	db.Set("/"+this.Id, results)
-	return
-}
-
-func (this *Race) MoveShips() {
-	this.StepRace(1.0 / 60.0)
-	for _, racer := range this.Racers {
-		if racer.Finished {
-			continue
-		}
-		motion := Segment{racer.Position, racer.player.Ship.Body.Position()}
-		racer.Position = racer.player.Ship.Body.Position()
-		racer.Angle = racer.player.Ship.Body.Angle()
-		racer.locations = append(racer.locations, &Location{racer.Position, racer.Angle, this.Ticks})
-		if racer.Checkpoint == len(this.Track.Checkpoints) {
-			if motion.Intersects(&this.Track.Goal) {
-				racer.Checkpoint = 0
-				elapsed := int64(0)
-				for _, x := range racer.LapTimes {
-					elapsed += x
-				}
-				racer.LapTimes = append(racer.LapTimes, this.Ticks-elapsed)
-				racer.player.SendChan <- &Message{"LapFinished", this.Ticks - elapsed, -1}
-				if len(racer.LapTimes) == this.Track.Laps {
-					this.Space.RemoveBody(racer.player.Ship.Body)
-					racer.Finished = true
-					racer.player.SendChan <- &Message{"YourRaceFinished", racer.LapTimes, -1}
-				}
-			}
-		} else {
-			if motion.Intersects(&this.Track.Checkpoints[racer.Checkpoint]) {
-				racer.Checkpoint++
-			}
-		}
+	_, err := db.Set("/"+this.Id, results)
+	if err != nil {
+		fmt.Println(err)
 	}
-	this.Ticks++
 }
 
 func (this *Race) StartRace() {
@@ -171,9 +176,6 @@ func (this *Race) RegisterRacer(player *Player) {
 	body := chipmunk.NewBody(player.Ship.Prototype.Mass, box.Moment(player.Ship.Prototype.Moment))
 	body.AddShape(box)
 	player.Ship.Body = body
-	this.Racers = append(this.Racers, &PlayerPosition{player.Name, vect.Vect{player.Ship.Prototype.Width, player.Ship.Prototype.Height}, vect.Vector_Zero, 0, 0, make([]int64, 0), false, player, make([]*Message, 0), make([]*Location, 0)})
+	this.Racers = append(this.Racers, &PlayerPosition{player.Name, vect.Vect{player.Ship.Prototype.Width, player.Ship.Prototype.Height}, vect.Vector_Zero, 0, 0, make([]int, 0), false, player, make([]*Message, 0), make([]*Location, 0)})
 }
 
-func (this *Race) StepRace(dt vect.Float) {
-	this.Space.Step(dt)
-}
