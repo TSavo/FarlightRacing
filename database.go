@@ -17,15 +17,14 @@ func init() {
 	if e != nil {
 		panic(e)
 	}
-	db = firebase.New(url)
 	secret, e := Readln(r)
 	if e != nil {
 		panic(e)
 	}
-	db.AuthToken = secret
+	db = firebase.New(url, secret)
 }
 
-var db *firebase.Firebase
+var db *firebase.FirebaseRoot;
 
 func Readln(r *bufio.Reader) (string, error) {
 	var (
